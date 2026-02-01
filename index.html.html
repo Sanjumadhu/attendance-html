@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Attendance System</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.29/jspdf.plugin.autotable.min.js"></script>
+
+<style>
+/* Original Styles - No Changes */
+body{ font-family:Arial; background:linear-gradient(to right,#74ebd5,#9face6); padding:15px; }
+.container{ max-width:1200px; margin:auto; background:white; padding:20px; border-radius:12px; box-shadow:0 0 12px rgba(0,0,0,.15); }
+h2{text-align:center;margin-bottom:15px}
+.dashboard{ display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:15px; margin-bottom:20px; }
+.card{ padding:20px; border-radius:15px; text-align:center; font-weight:bold; box-shadow:0 6px 12px rgba(0,0,0,.15); }
+.card .count{ font-size:40px; display:block; margin-top:5px; }
+.present{background:#b8f7c1;}
+.wdleave{background:#ffd6d6;}
+.sdleave{background:#e74c3c;color:white;}
+.holiday{background:#fff3b0;}
+.halfday{background:#ffe0b2;}
+.clcard{background:#d1c4e9;}
+
+/* Extra Filter Style */
+.filter-box { background:#f9f9f9; padding:15px; border-radius:10px; margin-bottom:15px; border:1px solid #ddd; }
+
+@media(max-width:600px){ .dashboard{grid-template-columns:repeat(3,1fr);} .card{padding:12px;} .card .count{font-size:24px;} }
+label{font-weight:bold}
+input,select,button{ width:100%; padding:10px; margin-top:5px; border:1px solid #ccc; border-radius:6px; }
+button{ background:#0984e3; color:white; border:none; margin-top:10px; cursor:pointer; }
+.dateBtns button{width:32%;background:#6c5ce7}
+table{ width:100%; border-collapse:collapse; margin-top:20px; }
+th,td{ border:1px solid #ccc; padding:8px; text-align:center; }
+th{background:#333;color:white}
+.leave-weekday{background:#ff0000; color:white;}
+.leave-sunday{background:#54a4ff;color:white;}
+.halfrow{background:#ff6f6f;}
+.holidayrow{background:#ffdd1b;}
+.clrow{background:#9d69fd; color:white;}
+.sunday-present{background:#2be247;}
+.del{background:#d63031;color:white;border:none;padding:5px 10px}
+.report{background:#f1f2f6;padding:10px;margin-top:15px;border-radius:8px}
+.excel{background:#27ae60}
+.pdf{background:#e17055}
+</style>
+</head>
+<body>
+
+<div class="container">
+<h2>Attendance Dashboard</h2>
+
+<div class="filter-box">
+    <label>Select Month to View/Export</label>
+    <div style="display:flex; gap:10px;">
+        <select id="fMonth" onchange="monthlyReport(); show();">
+            <option value="1">January</option><option value="2">February</option>
+            <option value="3">March</option><option value="4">April</option>
+            <option value="5">May</option><option value="6">June</option>
+            <option value="7">July</option><option value="8">August</option>
+            <option value="9">September</option><option value="10">October</option>
+            <option value="11">November</option><option value="12">December</option>
+        </select>
+        <input type="number" id="fYear" value="2026" onchange="monthlyReport(); show();">
+    </div>
+</div>
+
+<div class="dashboard">
+ <div class="card present">Present<span class="count" id="d_present">0</span></div>
+ <div class="card wdleave">Weekday Leave<span class="count" id="d_wdleave">0</span></div>
+ <div class="card sdleave">Sunday Leave<span class="count" id="d_sdleave">0</span></div>
+ <div class="card holiday">Holiday<span class="count" id="d_holiday">0</span></div>
+ <div class="card halfday">Half Day<span class="count" id="d_half">0</span></div>
+ <div class="card clcard">CL<span class="count" id="d_cl">0</span></div>
+</div>
+
+<label>Select Date</label>
+<input type="date" id="selDate">
+
+<div class="dateBtns">
+<button onclick="changeDate(-1)">Yesterday</button>
+<button onclick="setToday()">Today</button>
+<button onclick="changeDate(1)">Tomorrow</button>
+</div>
+
+<p><b>Date:</b> <span id="date"></span></p>
+<p><b>Day:</b> <span id="day"></span></p>
+
+<label>Status</label>
+<select id="status" onchange="toggleFields()">
+<option>Present</option>
+<option>Leave</option>
+<option>CL</option>
+<option>Half Day Leave</option>
+<option>Holiday</option>
+</select>
+
+<div id="halfBox" style="display:none">
+<label>Half Day Type</label>
+<select id="halfType">
+<option>Morning</option>
+<option>Evening</option>
+</select>
+</div>
+
+<div id="timeBox">
+<label>In Time</label>
+<input type="time" id="in">
+<label>Out Time</label>
+<input type="time" id="out">
+</div>
+
+<label>Permission (hrs)</label>
+<input type="number" id="perm" step="0.5">
+
+<div id="holidayBox" style="display:none">
+<label>Holiday Name</label>
+<input type="text" id="holiday">
+</div>
+
+<button onclick="save()">SAVE DATA</button>
+<button onclick="monthlyReport()">REFRESH DASHBOARD</button>
+<button class="excel" onclick="downloadExcel()">DOWNLOAD MONTHLY EXCEL</button>
+<button class="pdf" onclick="downloadPDF()">DOWNLOAD MONTHLY PDF</button>
+<button onclick="exportData()" style="background:#2d3436">BACKUP DATA (Download)</button>
+<input type="file" id="importFile" style="display:none" onchange="importData(event)">
+<button onclick="document.getElementById('importFile').click()" style="background:#636e72">RESTORE DATA (Upload)</button>
+<div id="report" class="report"></div>
+<div id="report" class="report"></div>
+
+<table>
+<thead>
+<tr>
+<th>Date</th><th>Day</th><th>Status</th>
+<th>In</th><th>Out</th><th>Perm</th>
+<th>Details</th><th>X</th>
+</tr>
+</thead>
+<tbody id="data"></tbody>
+</table>
+</div>
+
+<script>
+// Logic starts here - Original preserved
+let data = JSON.parse(localStorage.getItem("att")) || [];
+
+const selDate=document.getElementById("selDate");
+const dateSpan=document.getElementById("date");
+const daySpan=document.getElementById("day");
+const statusEl=document.getElementById("status");
+const halfTypeEl=document.getElementById("halfType");
+const inEl=document.getElementById("in");
+const outEl=document.getElementById("out");
+const permEl=document.getElementById("perm");
+const holidayEl=document.getElementById("holiday");
+const dataBody=document.getElementById("data");
+const report=document.getElementById("report");
+const timeBox=document.getElementById("timeBox");
+const halfBox=document.getElementById("halfBox");
+const holidayBox=document.getElementById("holidayBox");
+
+const fMonth = document.getElementById("fMonth");
+const fYear = document.getElementById("fYear");
+
+function setToday(){
+ let d=new Date();
+ selDate.value=d.toISOString().split("T")[0];
+ fMonth.value = d.getMonth() + 1;
+ fYear.value = d.getFullYear();
+ showDate();
+ monthlyReport();
+}
+setToday();
+
+function changeDate(n){
+ let d=new Date(selDate.value);
+ d.setDate(d.getDate()+n);
+ selDate.value=d.toISOString().split("T")[0];
+ showDate();
+}
+
+function showDate(){
+ let d=new Date(selDate.value);
+ let dateStr=d.toLocaleDateString("en-GB");
+ dateSpan.innerText=dateStr;
+ daySpan.innerText=d.toLocaleString("en-US",{weekday:"long"});
+ let rec=data.find(x=>x.date===dateStr);
+ if(rec){
+  statusEl.value=rec.status;
+  inEl.value=rec.intime||"";
+  outEl.value=rec.outtime||"";
+  permEl.value=rec.perm||"";
+  holidayEl.value=rec.holiday||"";
+  halfTypeEl.value=rec.halfType||"";
+ }else{
+  inEl.value=""; outEl.value=""; permEl.value=""; holidayEl.value=""; halfTypeEl.value="";
+ }
+ toggleFields();
+}
+
+function toggleFields(){
+ timeBox.style.display = (statusEl.value=="Present" || statusEl.value=="Half Day Leave")?"block":"none";
+ halfBox.style.display = statusEl.value=="Half Day Leave"?"block":"none";
+ holidayBox.style.display = statusEl.value=="Holiday"?"block":"none";
+}
+
+function to12(t){
+ if(!t) return "-";
+ let [h,m]=t.split(":");
+ h=parseInt(h);
+ let ap=h>=12?"PM":"AM";
+ h=h%12||12;
+ return h+":"+m+" "+ap;
+}
+
+function save(){
+ let d=new Date(selDate.value);
+ let rec={
+  date:d.toLocaleDateString("en-GB"),
+  day:d.toLocaleString("en-US",{weekday:"long"}),
+  status:statusEl.value,
+  intime:inEl.value,
+  outtime:outEl.value,
+  perm:permEl.value,
+  holiday:holidayEl.value,
+  halfType:halfTypeEl.value
+ };
+ let idx=data.findIndex(x=>x.date===rec.date);
+ if(idx>-1) data[idx]={...data[idx],...rec};
+ else data.push(rec);
+ localStorage.setItem("att",JSON.stringify(data));
+ show();
+ monthlyReport();
+}
+
+// Table show with filter
+function show(){
+ let h="";
+ let m = parseInt(fMonth.value);
+ let y = parseInt(fYear.value);
+ data.forEach((x,i)=>{
+  let[dd,mm,yy]=x.date.split("/");
+  if(+mm === m && +yy === y) {
+    let cls="",det="-";
+    if(x.status=="Leave"){ cls=(x.day=="Sunday")?"leave-sunday":"leave-weekday"; }
+    else if(x.status=="CL"){ cls="clrow"; }
+    else if(x.status=="Half Day Leave"){ cls="halfrow"; det=x.halfType; }
+    else if(x.status=="Holiday"){ cls="holidayrow"; det=x.holiday; }
+    else if(x.day=="Sunday"){ cls="sunday-present"; }
+
+    h+=`<tr class="${cls}">
+     <td>${x.date}</td><td>${x.day}</td><td>${x.status}</td>
+     <td>${to12(x.intime)}</td><td>${to12(x.outtime)}</td>
+     <td>${x.perm||"-"}</td><td>${det}</td>
+     <td><button class="del" onclick="del(${i})">X</button></td>
+    </tr>`;
+  }
+ });
+ dataBody.innerHTML = h;
+}
+
+function del(i){
+ if(confirm("Delete?")){
+  data.splice(i,1);
+  localStorage.setItem("att",JSON.stringify(data));
+  show();
+  monthlyReport();
+ }
+}
+
+function monthlyReport(){
+ let m = parseInt(fMonth.value);
+ let y = parseInt(fYear.value);
+ let p=0,wd=0,sd=0,hd=0,h=0,cl=0;
+ data.forEach(x=>{
+  let[dd,mm,yy]=x.date.split("/");
+  if(+mm===m && +yy===y){
+   if(x.status=="Present") p++;
+   if(x.status=="Leave"){ if(x.day=="Sunday") sd++; else wd++; }
+   if(x.status=="Half Day Leave") hd+=0.5;
+   if(x.status=="Holiday") h++;
+   if(x.status=="CL") cl++;
+  }
+ });
+ document.getElementById("d_present").innerText=p;
+ document.getElementById("d_wdleave").innerText=wd;
+ document.getElementById("d_sdleave").innerText=sd;
+ document.getElementById("d_holiday").innerText=h;
+ document.getElementById("d_half").innerText=hd;
+ document.getElementById("d_cl").innerText=cl;
+
+ report.innerHTML=`Present: ${p}<br>Weekday Leave: ${wd}<br>Sunday Leave: ${sd}<br>Half Day: ${hd}<br>Holiday: ${h}<br>CL: ${cl}`;
+}
+
+// Download Filtered Excel
+function downloadExcel(){
+ let m = parseInt(fMonth.value);
+ let y = parseInt(fYear.value);
+ let wsData=[["Date","Day","Status","In","Out","Perm","Details"]];
+ data.forEach(x=>{
+  let[dd,mm,yy]=x.date.split("/");
+  if(+mm === m && +yy === y) {
+    let det=x.status=="Half Day Leave"?x.halfType:(x.status=="Holiday"?x.holiday:"");
+    wsData.push([x.date,x.day,x.status,to12(x.intime),to12(x.outtime),x.perm||"",det]);
+  }
+ });
+ let wb=XLSX.utils.book_new();
+ let ws=XLSX.utils.aoa_to_sheet(wsData);
+ XLSX.utils.book_append_sheet(wb,ws,"Attendance");
+ XLSX.writeFile(wb, `Attendance_${fMonth.options[fMonth.selectedIndex].text}_${y}.xlsx`);
+}
+
+// Download Filtered PDF
+function downloadPDF() {
+    const { jsPDF } = window.jspdf;
+    let doc = new jsPDF('p', 'mm', 'a4');
+    
+    let m = parseInt(fMonth.value);
+    let y = parseInt(fYear.value);
+    let monthName = fMonth.options[fMonth.selectedIndex].text;
+
+    // --- 1. HEADER & EXTERNAL BORDER ---
+    // Page border (Thick)
+    doc.setLineWidth(1);
+    doc.rect(5, 5, 200, 287); 
+
+    doc.setFontSize(20);
+    doc.setTextColor(44, 62, 80);
+    doc.text("MONTHLY ATTENDANCE REPORT", 105, 20, { align: "center" });
+    
+    doc.setFontSize(11);
+    doc.text(`Employee Attendance: ${monthName} ${y}`, 105, 27, { align: "center" });
+    doc.line(15, 32, 195, 32);
+
+    // --- 2. CALCULATIONS ---
+    let p = 0, wd = 0, sd = 0, hd = 0, h = 0, cl = 0;
+    let rows = [];
+
+    data.forEach(x => {
+        let [dd, mm, yy] = x.date.split("/");
+        if (+mm === m && +yy === y) {
+            if (x.status == "Present") p++;
+            if (x.status == "Leave") { 
+                if (x.day == "Sunday") sd++; 
+                else wd++; 
+            }
+            if (x.status == "Half Day Leave") hd += 0.5;
+            if (x.status == "Holiday") h++;
+            if (x.status == "CL") cl++;
+
+            let det = x.status == "Half Day Leave" ? x.halfType : (x.status == "Holiday" ? x.holiday : "-");
+            rows.push([x.date, x.day, x.status, to12(x.intime), to12(x.outtime), x.perm || "-", det]);
+        }
+    });
+
+    // --- 3. INSIGHTS BOX (Sunday Leave Separate) ---
+    doc.autoTable({
+        startY: 38,
+        head: [['Present', 'WD Leave', 'Sunday Leave', 'CL', 'Half Day', 'Holiday']],
+        body: [[p, wd, sd, cl, hd, h]],
+        theme: 'grid',
+        headStyles: { fillColor: [44, 62, 80], halign: 'center', lineWidth: 0.5, borderColor: [0, 0, 0] },
+        bodyStyles: { halign: 'center', fontStyle: 'bold', textColor: [0, 0, 0], lineWidth: 0.5, borderColor: [0, 0, 0] },
+        margin: { left: 15, right: 15 }
+    });
+
+    // --- 4. DETAILED TABLE (Single Page Optimization) ---
+    doc.autoTable({
+        startY: doc.lastAutoTable.finalY + 10,
+        head: [["Date", "Day", "Status", "In", "Out", "Perm", "Details"]],
+        body: rows,
+        theme: 'grid',
+        styles: { fontSize: 8.5, cellPadding: 2, lineWidth: 0.3, borderColor: [0, 0, 0] },
+        headStyles: { fillColor: [220, 220, 220], textColor: [0, 0, 0], fontStyle: 'bold' },
+        columnStyles: {
+            0: { cellWidth: 25 },
+            1: { cellWidth: 25 },
+            2: { fontStyle: 'bold' }
+        },
+        // Row coloring logic
+        didParseCell: function(data) {
+            if (data.section === 'body') {
+                let status = data.row.cells[2].raw;
+                if (status === 'Leave') data.cell.styles.textColor = [200, 0, 0];
+                if (status === 'Holiday') data.cell.styles.fillColor = [255, 250, 200];
+            }
+        },
+        margin: { left: 15, right: 15, bottom: 20 }
+    });
+
+    // --- 5. FOOTER ---
+    let finalY = doc.lastAutoTable.finalY + 15;
+    if (finalY > 270) finalY = 275; // Ensuring it stays on one page
+
+    doc.setFontSize(9);
+    doc.text(`Report Generated: ${new Date().toLocaleDateString()}`, 15, finalY);
+    doc.text("Authorized Signature: __________________", 195, finalY, { align: "right" });
+
+    doc.save(`Attendance_${monthName}_${y}.pdf`);
+}
+// Function to export all data to a JSON file
+function exportData() {
+    let backup = localStorage.getItem("att");
+    if(!backup) return alert("No data found!");
+    let blob = new Blob([backup], {type: "application/json"});
+    let url = URL.createObjectURL(blob);
+    let a = document.createElement("a");
+    a.href = url;
+    a.download = `attendance_backup_${new Date().toLocaleDateString()}.json`;
+    a.click();
+}
+
+// Function to import data from a JSON file
+function importData(event) {
+    let reader = new FileReader();
+    reader.onload = function(e) {
+        try {
+            let importedData = JSON.parse(e.target.result);
+            if(confirm("Warning: Existing data will be replaced. Continue?")) {
+                localStorage.setItem("att", JSON.stringify(importedData));
+                location.reload(); 
+            }
+        } catch(err) {
+            alert("Invalid Backup File!");
+        }
+    };
+    reader.readAsText(event.target.files[0]);
+}
+show();
+monthlyReport();
+</script>
+</body>
+</html>
+
+
